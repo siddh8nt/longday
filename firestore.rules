@@ -1,0 +1,72 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: waitlist
+    // Document ID: auto-generated
+    // Fields:
+    //   - email: string (required, email format) - The email address of the user.
+    //   - createdAt: timestamp (required) - The time the user joined the waitlist.
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isValidEmail(email) {
+      return email is string &&
+        email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidWaitlistEntry(data) {
+      return hasRequiredFields(['email', 'createdAt']) &&
+             hasOnlyAllowedFields(['email', 'createdAt']) &&
+             isValidEmail(data.email) &&
+             data.createdAt is timestamp;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /waitlist/{entryId} {
+      // Allow anyone to create a waitlist entry, but only if it's valid.
+      // We don't require authentication for the waitlist signup.
+      allow create: if isValidWaitlistEntry(request.resource.data);
+      
+      // Only admins can read the waitlist.
+      allow read, update, delete: if isAdmin();
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "siddhantswaroop05@gmail.com" && request.auth.token.email_verified == true));
+    }
+    
+    match /users/{userId} {
+      allow read: if isAuthenticated() && request.auth.uid == userId;
+      allow write: if false; // Only manageable via console or admin
+    }
+  }
+}
